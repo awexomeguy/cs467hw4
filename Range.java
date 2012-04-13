@@ -2,11 +2,13 @@ public class Range
 {
 	private int _lowerBound;
 	private int _upperBound;
+	private String _bCast;
 	
-	public Range(int l, int u)
+	public Range(int l, int u, String bCast)
 	{
 		_lowerBound = l;
 		_upperBound = u;
+		_bCast = bCast;
 	}
 	
 	public boolean contains(int x)
@@ -24,8 +26,8 @@ public class Range
 		return _lowerBound;
 	}
 	
-	public void print()
+	public String toString()
 	{
-		System.out.println("[" + _lowerBound + ", " + _upperBound + "]");
+		return("[" + _bCast.charAt(_lowerBound) + ", " + _bCast.charAt(_upperBound) + "]");
 	}
 }

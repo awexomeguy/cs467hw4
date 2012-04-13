@@ -6,6 +6,7 @@ class Indexing
 {
 	public static void main(String args[])
 	{
+		int replicationLevel = 2;
 		String bCast = "";
 		
 		// make sure file name is supplied
@@ -45,19 +46,123 @@ class Indexing
 		// create index tree from the bottom up
 		System.out.println("creating index tree");
 		
-		DefaultMutableTreeNode [] indexes = new DefaultMutableTreeNode[bCast.length()];
-		System.out.println("leaf level has " + indexes.length + " nodes");
+		DefaultMutableTreeNode [] dataPages = new DefaultMutableTreeNode[bCast.length()];
+		System.out.println("leaf level has " + dataPages.length + " nodes");
 		
-		for(int i = 0; i < indexes.length; ++i)
-			indexes[i] = new DefaultMutableTreeNode(bCast.charAt(i));
+		for(int i = 0; i < dataPages.length; ++i)
+			dataPages[i] = new DefaultMutableTreeNode(bCast.charAt(i));
 		
-		DefaultMutableTreeNode root = joinIndexes(indexes);
+		DefaultMutableTreeNode root = joinIndexes(dataPages, bCast);
 		
-		printTreeStartingAt(root);
+		// create new broadcast schedule that includes indexes
+		ArrayList<DefaultMutableTreeNode> schedule = new ArrayList<DefaultMutableTreeNode>();
+		
+		ArrayList<DefaultMutableTreeNode> replicationLevelNodes = new ArrayList<DefaultMutableTreeNode>();
+		Enumeration e = root.breadthFirstEnumeration();
+		while(e.hasMoreElements())
+		{
+			DefaultMutableTreeNode m = (DefaultMutableTreeNode)e.nextElement();
+			if(m.getDepth() == replicationLevel)
+				replicationLevelNodes.add(m);
+		}
+		
+		ArrayList<Integer> controlIndexes = new ArrayList<Integer>();
+		DefaultMutableTreeNode currentNode, nextNode;
+		
+		// sets up the schedule based on the replication level
+		for(int i = 0; i < replicationLevelNodes.size(); ++i)
+		{
+			currentNode = replicationLevelNodes.get(i);
+			e = currentNode.breadthFirstEnumeration();
+			
+			if(i == 0)
+			{
+				TreeNode [] path = replicationLevelNodes.get(0).getPath();
+				for(int b = 0; b < path.length - 1; ++b)
+					schedule.add((DefaultMutableTreeNode)path[b]);
+			}	
+			
+			while(e.hasMoreElements())
+				schedule.add((DefaultMutableTreeNode)(e.nextElement()));
+			
+			if(i != replicationLevelNodes.size() - 1)
+			{
+				nextNode = replicationLevelNodes.get(i + 1);
+				
+				while(e.hasMoreElements())
+					schedule.add((DefaultMutableTreeNode)(e.nextElement()));
+				
+				// replicate all index pages between nextNode and lca(currentNode, nextNode)
+				DefaultMutableTreeNode lca = (DefaultMutableTreeNode)currentNode.getSharedAncestor(nextNode);
+				e = nextNode.pathFromAncestorEnumeration(lca);
+				while(e.hasMoreElements())
+				{
+					DefaultMutableTreeNode aNode = (DefaultMutableTreeNode)e.nextElement();
+					if(aNode != nextNode)
+						schedule.add(aNode);
+				}
+			}
+		}
+		
+		// for control indexes
+		// find the next page that has the start index of this index page
+		for(int i = 0; i < schedule.size(); ++i)
+		{
+			if(schedule.get(i).isLeaf())
+				controlIndexes.add(-1);
+			else if(!schedule.get(i).isLeaf())
+			{
+				int j = 1;
+				boolean done = false;
+				while(!done)
+				{
+					if(schedule.get(i + j).isLeaf())
+					{
+						char page = schedule.get(i + j).toString().charAt(0);
+						if(page == bCast.charAt(((Range)(schedule.get(i).getUserObject())).lowerBound()))
+						{	
+							controlIndexes.add(i + j);
+							done = true;
+						}
+					}
+					else
+					{
+						Range range = (Range)schedule.get(i).getUserObject();
+						if(range.contains(((Range)(schedule.get(i + j).getUserObject())).lowerBound()))
+						{
+							controlIndexes.add(i + j);
+							done = true;
+						}
+					}
+					
+					++j;
+					
+					if(i + j == schedule.size())
+					{
+						controlIndexes.add(0);
+						done = true;
+					}
+				}
+			}
+		}
+		
+		// output the schedule
+		System.out.println("\nschedule index\t\tdata\t\tcontrol index");
+		for(int i = 0; i < schedule.size(); ++i)
+		{
+			String printMe = Integer.toString(i) + "\t\t\t" + schedule.get(i).toString() + "\t\t\t";
+			if(controlIndexes.get(i) != -1)
+				printMe += Integer.toString(controlIndexes.get(i));
+				
+			System.out.println(printMe);
+		}
 	}
 	
-	public static DefaultMutableTreeNode joinIndexes(DefaultMutableTreeNode [] indexArr)
+	public static DefaultMutableTreeNode joinIndexes(DefaultMutableTreeNode [] indexArr, String bCast)
 	{
+		if(indexArr.length == 0)
+			return null;
+		
 		// if there is only one node left to join, it is the root and function is complete
 		if(indexArr.length == 1)
 			return indexArr[0];
@@ -93,7 +198,7 @@ class Indexing
 			}
 			
 			// put the indexes into a range, and put the range into the parent node
-			r = new Range(start, end);
+			r = new Range(start, end, bCast);
 			nextLevel[i] = new DefaultMutableTreeNode(r);
 			nextLevel[i].add(indexArr[childIndex]);
 			if(twoChildren)
@@ -103,7 +208,7 @@ class Indexing
 		// call the function again to create the next level up
 		System.out.println("creating new level with " + nextLevel.length + " nodes");
 		
-		return joinIndexes(nextLevel);
+		return joinIndexes(nextLevel, bCast);
 	}
 	
 	// prints out the hierarchy of the tree on the screen
@@ -113,13 +218,7 @@ class Indexing
 		for(; e.hasMoreElements();)
 		{
 			DefaultMutableTreeNode node = (DefaultMutableTreeNode)e.nextElement();
-			if(node.isLeaf())
-				System.out.println(node);
-			else
-			{
-				Range r = (Range)node.getUserObject();
-				r.print();
-			}
+			System.out.println(node.toString());
 		}
 	}
 }
